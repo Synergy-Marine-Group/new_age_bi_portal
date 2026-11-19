@@ -35,7 +35,7 @@ type CategoryDto = {
 const DEFAULT_LIST: PagedRequest = { page: 1, pageSize: 20, search: "" };
 
 async function enrichDepartmentAdminsMap(ids: string[]): Promise<Map<string, DepartmentAdmin>> {
-  const validIds = [...new Set(ids.filter((id) => UUID_RE.test(id)))];
+  const validIds = Array.from(new Set(ids.filter((id) => UUID_RE.test(id))));
   const map = new Map<string, DepartmentAdmin>();
   if (!validIds.length) return map;
   const db = getDb();
@@ -94,7 +94,7 @@ function categoryPathLabel(
   const seen = new Set<string>();
   while (cur && byId.has(cur) && !seen.has(cur) && parts.length < 32) {
     seen.add(cur);
-    const node = byId.get(cur)!;
+    const node: { name: string; parentId: string | null } = byId.get(cur)!;
     parts.push(node.name);
     cur = node.parentId ?? undefined;
   }
@@ -139,7 +139,7 @@ async function loadCategoryRows(ctx: AdminContext): Promise<CategoryRow[]> {
          ORDER BY lower(name)`,
       );
   let rows: CategoryRow[] = hasHierarchy
-    ? res.rows
+    ? (res.rows as CategoryRow[])
     : res.rows.map((r) => ({
         ...r,
         parent_id: null,

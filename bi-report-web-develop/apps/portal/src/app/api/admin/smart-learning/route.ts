@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const denied = requireSystemAdmin(admin);
   if (denied) return denied;
   const result = await fetchLearningProposals(admin.email);
-  return NextResponse.json(result, { status: typeof result.httpStatus === "number" && result.httpStatus < 500 ? result.httpStatus : 502 });
+  return NextResponse.json(result, { status: "httpStatus" in result && typeof result.httpStatus === "number" && result.httpStatus < 500 ? result.httpStatus : 502 });
 }
 
 export async function POST(request: NextRequest) {
@@ -20,5 +20,5 @@ export async function POST(request: NextRequest) {
   const denied = requireSystemAdmin(admin);
   if (denied) return denied;
   const result = await generateLearningProposal(admin.email);
-  return NextResponse.json(result, { status: typeof result.httpStatus === "number" && result.httpStatus < 500 ? result.httpStatus : 502 });
+  return NextResponse.json(result, { status: "httpStatus" in result && typeof result.httpStatus === "number" && result.httpStatus < 500 ? result.httpStatus : 502 });
 }

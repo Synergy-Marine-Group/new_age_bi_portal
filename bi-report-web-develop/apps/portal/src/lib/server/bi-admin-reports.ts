@@ -35,7 +35,7 @@ export type ReportDetailsDto = {
   fabricAppId?: string;
 };
 
-type ReportCreateRequest = {
+export type ReportCreateRequest = {
   id?: string;
   name?: string;
   description?: string;

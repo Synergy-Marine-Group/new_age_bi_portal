@@ -15,8 +15,9 @@ type Proposal = {
 
 async function api(path: string, init?: RequestInit) {
   const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
-  const headers: HeadersInit = { ...(init?.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-  if (init?.body) headers["Content-Type"] = "application/json";
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (init?.body) headers.set("Content-Type", "application/json");
   return fetch(path, { ...init, headers });
 }
 

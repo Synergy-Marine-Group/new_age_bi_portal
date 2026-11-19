@@ -15,6 +15,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const reason = typeof body.reason === "string" ? body.reason.trim() : "";
   if (!reason) return NextResponse.json({ message: "reason required" }, { status: 400 });
   const result = await rejectLearningProposal(admin.email, id, reason);
-  const status = typeof result.httpStatus === "number" ? result.httpStatus : 502;
+  const status = "httpStatus" in result && typeof result.httpStatus === "number" ? result.httpStatus : 502;
   return NextResponse.json(result, { status });
 }

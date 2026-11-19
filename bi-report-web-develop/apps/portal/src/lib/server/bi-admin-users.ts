@@ -181,7 +181,7 @@ async function resolveGroupIds(namesOrIds: string[]): Promise<string[]> {
     );
     if (byName.rows[0]) ids.push(byName.rows[0].id);
   }
-  return [...new Set(ids)];
+  return Array.from(new Set(ids));
 }
 
 export async function addUser(ctx: AdminContext, body: UserCreateRequest) {

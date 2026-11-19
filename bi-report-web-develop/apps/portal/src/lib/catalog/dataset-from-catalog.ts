@@ -100,7 +100,7 @@ function setTitleMapping(
   datasetId: string,
 ) {
   const variants = new Set([norm(name), looseTitle(name)].filter(Boolean));
-  for (const variant of variants) {
+  for (const variant of Array.from(variants)) {
     const key = `${normWs(workspaceId)}|${variant}`;
     const prev = idx.byWorkspaceTitle.get(key);
     if (prev && prev !== datasetId) {
