@@ -9,6 +9,11 @@ function loadConnectionString(): string {
     return process.env.BI_REPORT_DB_CONNECTION.trim();
   }
 
+  // Env-only mode: BI_REPORT_DB_HOST/USER/PASSWORD in .env.local. No dependency on the API repo.
+  if (process.env.BI_REPORT_DB_HOST?.trim()) {
+    return "";
+  }
+
   const filePath = process.env.BI_API_APPSETTINGS || DEFAULT_APPSETTINGS;
   const raw = readFileSync(filePath, "utf8");
   const match = raw.match(/"BIReportDbConnection"\s*:\s*"([^"]+)"/);
