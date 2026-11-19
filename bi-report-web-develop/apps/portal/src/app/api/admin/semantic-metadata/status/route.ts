@@ -12,6 +12,6 @@ export async function GET(request: NextRequest) {
   if (denied) return denied;
 
   const result = await fetchSemanticMetadataStatus();
-  const httpStatus = typeof result.httpStatus === "number" ? result.httpStatus : result.status === "ok" ? 200 : 502;
+  const httpStatus = "httpStatus" in result && typeof result.httpStatus === "number" ? result.httpStatus : result.status === "ok" ? 200 : 502;
   return NextResponse.json(result, { status: httpStatus });
 }

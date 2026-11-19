@@ -20,7 +20,7 @@ export function categoryBreadcrumb(lookup: Map<string, FlatCategory>, id: string
   const seen = new Set<string>();
   while (cur && lookup.has(cur) && !seen.has(cur) && parts.length < MAX_DEPTH) {
     seen.add(cur);
-    const node = lookup.get(cur)!;
+    const node: FlatCategory = lookup.get(cur)!;
     parts.push(node.name);
     cur = node.parentId ?? undefined;
   }
@@ -62,7 +62,7 @@ export function sortCategoriesDepthFirst(categories: FlatCategory[]): FlatCatego
     if (!byParent.has(parentKey)) byParent.set(parentKey, []);
     byParent.get(parentKey)!.push(c);
   }
-  for (const list of byParent.values()) {
+  for (const list of Array.from(byParent.values())) {
     list.sort(
       (a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.name.localeCompare(b.name),
     );

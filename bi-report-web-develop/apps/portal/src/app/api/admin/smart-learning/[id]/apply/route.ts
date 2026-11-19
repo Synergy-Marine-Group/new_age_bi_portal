@@ -13,6 +13,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const denied = requireSystemAdmin(admin);
   if (denied) return denied;
   const result = await applyLearningProposal(admin.email, id);
-  const status = typeof result.httpStatus === "number" ? result.httpStatus : 502;
+  const status = "httpStatus" in result && typeof result.httpStatus === "number" ? result.httpStatus : 502;
   return NextResponse.json(result, { status });
 }

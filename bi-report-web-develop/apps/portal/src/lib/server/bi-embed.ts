@@ -228,7 +228,7 @@ function buildExportFilter(filters: FilterItem[] | undefined): string | undefine
     grouped.set(key, list);
   }
   const parts: string[] = [];
-  for (const [key, values] of grouped) {
+  for (const [key, values] of Array.from(grouped)) {
     if (values.length > 1) {
       parts.push(`${key} in(${values.map((v) => `'${v.replace(/'/g, "''")}'`).join(",")})`);
     } else {

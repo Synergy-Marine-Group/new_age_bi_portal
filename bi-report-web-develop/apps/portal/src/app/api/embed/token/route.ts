@@ -202,7 +202,7 @@ export async function POST(request: NextRequest) {
       headers: {
         "X-Embed-Rls-Applied": String(token.security?.rlsApplied ?? "unknown"),
         "X-Embed-Roles-Sent": String(payload.roles.length),
-        "X-Embed-Dataset-Id": datasetId,
+        "X-Embed-Dataset-Id": datasetId ?? "unknown",
         "X-Embed-Dataset-Source": datasetSource,
       },
     });
