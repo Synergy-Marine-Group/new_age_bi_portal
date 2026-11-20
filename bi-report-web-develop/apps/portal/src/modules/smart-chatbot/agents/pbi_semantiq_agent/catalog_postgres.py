@@ -17,8 +17,18 @@ def _parse_npgsql(connection_string: str) -> dict[str, str]:
     return out
 
 
+def _is_postgres_uri(value: str) -> bool:
+    return bool(re.match(r"^postgres(ql)?://", value.strip(), re.IGNORECASE))
+
+
 def postgres_dsn() -> str | None:
+    sql_uri = os.environ.get("SQL_CONNECTION_STRING", "").strip()
+    if sql_uri and _is_postgres_uri(sql_uri):
+        return sql_uri
+
     direct = os.environ.get("BI_REPORT_DB_CONNECTION", "").strip()
+    if direct and _is_postgres_uri(direct):
+        return direct
     if direct:
         m = _parse_npgsql(direct)
         host = m.get("host") or os.environ.get("BI_REPORT_DB_HOST", "")
@@ -78,7 +88,9 @@ def _category_paths(cur, hierarchy: bool) -> dict[str, str]:
 def fetch_portal_reports() -> list[dict[str, Any]]:
     dsn = postgres_dsn()
     if not dsn:
-        raise RuntimeError("Set BI_REPORT_DB_HOST (and user/password) or BI_REPORT_DB_CONNECTION for catalog export.")
+        raise RuntimeError(
+            "Set SQL_CONNECTION_STRING, BI_REPORT_DB_CONNECTION, or BI_REPORT_DB_HOST (and user/password) for catalog export."
+        )
 
     try:
         import psycopg

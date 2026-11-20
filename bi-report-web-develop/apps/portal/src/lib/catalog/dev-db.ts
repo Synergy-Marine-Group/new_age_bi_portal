@@ -8,11 +8,28 @@ const REQUIRED_DB_VARS = [
   "BI_REPORT_DB_PASSWORD",
 ] as const;
 
+const POOL_OPTIONS = {
+  ssl: { rejectUnauthorized: false } as const,
+  max: 6,
+  connectionTimeoutMillis: 20000,
+  idleTimeoutMillis: 30000,
+};
+
 // Config comes only from env vars (set in .env.local locally, Amplify env vars when deployed).
 // No file reads: the .NET API's appsettings is not available on the Amplify Linux runtime.
-function loadConnectionString(): string {
-  if (process.env.BI_REPORT_DB_CONNECTION?.trim()) {
-    return process.env.BI_REPORT_DB_CONNECTION.trim();
+function isPostgresUri(value: string): boolean {
+  return /^postgres(ql)?:\/\//i.test(value.trim());
+}
+
+function loadRawConnectionValue(): string {
+  const fromAmplify = process.env.SQL_CONNECTION_STRING?.trim();
+  if (fromAmplify) {
+    return fromAmplify;
+  }
+
+  const fromConnection = process.env.BI_REPORT_DB_CONNECTION?.trim();
+  if (fromConnection) {
+    return fromConnection;
   }
 
   if (process.env.BI_REPORT_DB_HOST?.trim()) {
@@ -20,7 +37,7 @@ function loadConnectionString(): string {
   }
 
   throw new Error(
-    `Portal catalog DB is not configured. Set BI_REPORT_DB_CONNECTION or ${REQUIRED_DB_VARS.join(", ")}.`,
+    `Portal catalog DB is not configured. Set SQL_CONNECTION_STRING, BI_REPORT_DB_CONNECTION, or ${REQUIRED_DB_VARS.join(", ")}.`,
   );
 }
 
@@ -43,22 +60,55 @@ function parseNpgsql(connectionString: string): PoolConfig {
     database,
     user: process.env.BI_REPORT_DB_USER?.trim() || map.username || map.user,
     password: process.env.BI_REPORT_DB_PASSWORD?.trim() || map.password,
-    ssl: { rejectUnauthorized: false },
-    max: 6,
-    connectionTimeoutMillis: 20000,
-    idleTimeoutMillis: 30000,
+    ...POOL_OPTIONS,
   };
+}
+
+function poolConfigFromPostgresUri(uri: string): PoolConfig {
+  return {
+    connectionString: uri.trim(),
+    ...POOL_OPTIONS,
+  };
+}
+
+export function metaFromPostgresUri(uri: string): {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+} {
+  const parsed = new URL(uri.trim());
+  const database = parsed.pathname.replace(/^\//, "");
+  return {
+    host: parsed.hostname,
+    port: Number(parsed.port || 5432),
+    database,
+    user: decodeURIComponent(parsed.username),
+  };
+}
+
+/** Resolves pool config from env (exported for tests). */
+export function resolvePoolConfig(): PoolConfig {
+  const raw = loadRawConnectionValue();
+  if (raw && isPostgresUri(raw)) {
+    return poolConfigFromPostgresUri(raw);
+  }
+  return parseNpgsql(raw);
 }
 
 let pool: Pool | null = null;
 let poolSignature: string | null = null;
 
 function poolSignatureFrom(cfg: PoolConfig): string {
+  if (cfg.connectionString && isPostgresUri(cfg.connectionString)) {
+    const meta = metaFromPostgresUri(cfg.connectionString);
+    return `${meta.host}:${meta.port}/${meta.database}:${meta.user}`;
+  }
   return `${cfg.host}:${cfg.port}/${cfg.database}:${cfg.user}`;
 }
 
 export function getDevDbPool(): Pool {
-  const cfg = parseNpgsql(loadConnectionString());
+  const cfg = resolvePoolConfig();
   const signature = poolSignatureFrom(cfg);
 
   if (!pool || poolSignature !== signature) {
@@ -78,6 +128,9 @@ export function getDevDbPool(): Pool {
 }
 
 export function getDevDbMeta() {
-  const cfg = parseNpgsql(loadConnectionString());
+  const cfg = resolvePoolConfig();
+  if (cfg.connectionString && isPostgresUri(cfg.connectionString)) {
+    return metaFromPostgresUri(cfg.connectionString);
+  }
   return { host: cfg.host, database: cfg.database, port: cfg.port, user: cfg.user };
 }
