@@ -1,26 +1,27 @@
-import { readFileSync } from "fs";
 import { Pool, type PoolConfig } from "pg";
 
-const DEFAULT_APPSETTINGS =
-  "C:\\Users\\anilkumar.c\\OneDrive - Synergy Maritime Private Limited\\WIP\\BI Portal Revamp\\bi-report-api-develop\\bi-report-api-develop\\PowerBi\\PowerBI.Api\\appsettings.Development.json";
+const REQUIRED_DB_VARS = [
+  "BI_REPORT_DB_HOST",
+  "BI_REPORT_DB_PORT",
+  "BI_REPORT_DB_NAME",
+  "BI_REPORT_DB_USER",
+  "BI_REPORT_DB_PASSWORD",
+] as const;
 
+// Config comes only from env vars (set in .env.local locally, Amplify env vars when deployed).
+// No file reads: the .NET API's appsettings is not available on the Amplify Linux runtime.
 function loadConnectionString(): string {
   if (process.env.BI_REPORT_DB_CONNECTION?.trim()) {
     return process.env.BI_REPORT_DB_CONNECTION.trim();
   }
 
-  // Env-only mode: BI_REPORT_DB_HOST/USER/PASSWORD in .env.local. No dependency on the API repo.
   if (process.env.BI_REPORT_DB_HOST?.trim()) {
     return "";
   }
 
-  const filePath = process.env.BI_API_APPSETTINGS || DEFAULT_APPSETTINGS;
-  const raw = readFileSync(filePath, "utf8");
-  const match = raw.match(/"BIReportDbConnection"\s*:\s*"([^"]+)"/);
-  if (!match?.[1]) {
-    throw new Error("BIReportDbConnection was not found in appsettings.Development.json");
-  }
-  return match[1];
+  throw new Error(
+    `Portal catalog DB is not configured. Set BI_REPORT_DB_CONNECTION or ${REQUIRED_DB_VARS.join(", ")}.`,
+  );
 }
 
 function parseNpgsql(connectionString: string): PoolConfig {

@@ -1,4 +1,3 @@
-
 version: 1
 
 applications:
@@ -16,6 +15,17 @@ applications:
 
         build:
           commands:
+            # Expose server-side environment variables to Next.js SSR
+            - env | grep -e '^MICROSOFT_TENANT_ID=' >> .env.production
+            - env | grep -e '^MICROSOFT_CLIENT_ID=' >> .env.production
+            - env | grep -e '^MICROSOFT_CLIENT_SECRET=' >> .env.production
+            - env | grep -e '^MICROSOFT_REDIRECT_URI=' >> .env.production
+            - env | grep -e '^JWT_SECRET=' >> .env.production
+
+            # Preserve public frontend environment variables
+            - env | grep -e '^NEXT_PUBLIC_' >> .env.production
+
+            # Build Next.js application
             - npm run build
 
       artifacts:
