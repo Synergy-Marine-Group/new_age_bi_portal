@@ -8,6 +8,7 @@ import { spawn } from "child_process";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { cleanPortalCache } from "./clean-cache.mjs";
+import { spawnNext } from "./ensure-next.mjs";
 import { ensureSmartAgentsRunning, stopSmartAgents } from "./smart-agents.mjs";
 
 const portalRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,7 +26,6 @@ process.on("SIGTERM", () => {
   process.exit(143);
 });
 
-const nextBin = join(portalRoot, "node_modules", "next", "dist", "bin", "next");
 // Turbopack writes its manifests into .next while OneDrive syncs that folder, and fails with
 // "UNKNOWN: unknown error, open '...\.next\server\server-reference-manifest.js'". Always use webpack here.
 const requested = process.argv.slice(2);
@@ -34,10 +34,7 @@ if (forbidden.length) {
   console.warn("[dev] Ignoring " + forbidden.join(", ") + ": Turbopack is disabled for this project (OneDrive). Using webpack.");
 }
 const nextArgs = requested.filter((arg) => !forbidden.includes(arg));
-const child = spawn(process.execPath, [nextBin, "dev", ...nextArgs], {
-  cwd: portalRoot,
-  stdio: "inherit",
-});
+const child = spawnNext("dev", nextArgs);
 child.on("exit", (code) => {
   shutdownAgents();
   process.exit(code ?? 0);

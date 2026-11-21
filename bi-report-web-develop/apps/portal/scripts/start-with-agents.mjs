@@ -2,6 +2,7 @@
 import { spawn } from "child_process";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
+import { spawnNext } from "./ensure-next.mjs";
 import { ensureSmartAgentsRunning, stopSmartAgents } from "./smart-agents.mjs";
 
 const portalRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -13,11 +14,7 @@ process.on("SIGINT", () => {
   process.exit(130);
 });
 
-const nextBin = join(portalRoot, "node_modules", "next", "dist", "bin", "next");
-const child = spawn(process.execPath, [nextBin, "start", ...process.argv.slice(2)], {
-  cwd: portalRoot,
-  stdio: "inherit",
-});
+const child = spawnNext("start", process.argv.slice(2));
 child.on("exit", (code) => {
   shutdownAgents();
   process.exit(code ?? 0);
