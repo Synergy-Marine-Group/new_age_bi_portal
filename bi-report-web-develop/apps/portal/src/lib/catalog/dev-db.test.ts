@@ -82,4 +82,22 @@ describe("resolvePoolConfig", () => {
     const { resolvePoolConfig } = await import("./dev-db");
     expect(() => resolvePoolConfig()).toThrow(/SQL_CONNECTION_STRING/);
   });
+
+  it("strips wrapping quotes from SQL_CONNECTION_STRING", async () => {
+    process.env.SQL_CONNECTION_STRING =
+      '"postgres://quoted_user:secret@quote-host:5432/quoted_db"';
+    const { resolvePoolConfig, metaFromPostgresUri } = await import("./dev-db");
+    const cfg = resolvePoolConfig();
+    expect(cfg.connectionString).toBe("postgres://quoted_user:secret@quote-host:5432/quoted_db");
+    const meta = metaFromPostgresUri(cfg.connectionString!);
+    expect(meta.host).toBe("quote-host");
+    expect(meta.user).toBe("quoted_user");
+  });
+
+  it("parses URI meta when password contains unencoded question mark", async () => {
+    process.env.SQL_CONNECTION_STRING = "postgres://u:pass?mark@h:5432/db";
+    const { metaFromPostgresUri, resolvePoolConfig } = await import("./dev-db");
+    expect(() => metaFromPostgresUri(process.env.SQL_CONNECTION_STRING)).not.toThrow();
+    expect(resolvePoolConfig().connectionString).toContain("pass?mark");
+  });
 });

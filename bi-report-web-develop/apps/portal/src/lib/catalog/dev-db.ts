@@ -17,19 +17,30 @@ const POOL_OPTIONS = {
 
 // Config comes only from env vars (set in .env.local locally, Amplify env vars when deployed).
 // No file reads: the .NET API's appsettings is not available on the Amplify Linux runtime.
+function normalizeConnectionInput(raw: string): string {
+  let s = raw.trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"') && s.length >= 2) ||
+    (s.startsWith("'") && s.endsWith("'") && s.length >= 2)
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 function isPostgresUri(value: string): boolean {
-  return /^postgres(ql)?:\/\//i.test(value.trim());
+  return /^postgres(ql)?:\/\//i.test(normalizeConnectionInput(value));
 }
 
 function loadRawConnectionValue(): string {
   const fromAmplify = process.env.SQL_CONNECTION_STRING?.trim();
   if (fromAmplify) {
-    return fromAmplify;
+    return normalizeConnectionInput(fromAmplify);
   }
 
   const fromConnection = process.env.BI_REPORT_DB_CONNECTION?.trim();
   if (fromConnection) {
-    return fromConnection;
+    return normalizeConnectionInput(fromConnection);
   }
 
   if (process.env.BI_REPORT_DB_HOST?.trim()) {
@@ -66,10 +77,14 @@ function parseNpgsql(connectionString: string): PoolConfig {
 
 function poolConfigFromPostgresUri(uri: string): PoolConfig {
   return {
-    connectionString: uri.trim(),
+    connectionString: normalizeConnectionInput(uri),
     ...POOL_OPTIONS,
   };
 }
+
+/** Parse postgres URI without WHATWG URL (handles encoded passwords and avoids ERR_INVALID_URL). */
+const POSTGRES_URI_META_RE =
+  /^postgres(?:ql)?:\/\/(?:([^:/]+)(?::([^@]*))?@)?([^:@/]+)(?::(\d+))?\/([^?#\s]*)/i;
 
 export function metaFromPostgresUri(uri: string): {
   host: string;
@@ -77,19 +92,57 @@ export function metaFromPostgresUri(uri: string): {
   database: string;
   user: string;
 } {
-  const parsed = new URL(uri.trim());
-  const database = parsed.pathname.replace(/^\//, "");
+  const trimmed = normalizeConnectionInput(uri);
+  const match = trimmed.match(POSTGRES_URI_META_RE);
+  if (!match) {
+    throw new Error("Invalid postgres connection URI");
+  }
+  const [, userPart, , host, portPart, database] = match;
+  let user = userPart ?? "";
+  try {
+    user = decodeURIComponent(user);
+  } catch {
+    // keep raw user if percent-encoding is incomplete
+  }
   return {
-    host: parsed.hostname,
-    port: Number(parsed.port || 5432),
+    host,
+    port: Number(portPart || 5432),
     database,
-    user: decodeURIComponent(parsed.username),
+    user,
   };
 }
 
 /** Resolves pool config from env (exported for tests). */
 export function resolvePoolConfig(): PoolConfig {
   const raw = loadRawConnectionValue();
+  // #region agent log
+  fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a5396f" },
+    body: JSON.stringify({
+      sessionId: "a5396f",
+      runId: "pre-fix",
+      hypothesisId: "A-B",
+      location: "dev-db.ts:resolvePoolConfig",
+      message: "db env resolution",
+      data: {
+        source: process.env.SQL_CONNECTION_STRING?.trim()
+          ? "SQL_CONNECTION_STRING"
+          : process.env.BI_REPORT_DB_CONNECTION?.trim()
+            ? "BI_REPORT_DB_CONNECTION"
+            : process.env.BI_REPORT_DB_HOST?.trim()
+              ? "BI_REPORT_DB_DISCRETE"
+              : "none",
+        isUri: Boolean(raw && isPostgresUri(raw)),
+        hadWrappingQuotes:
+          Boolean(process.env.SQL_CONNECTION_STRING?.trim()) &&
+          /^["']/.test(process.env.SQL_CONNECTION_STRING!.trim()),
+        rawLength: raw.length,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   if (raw && isPostgresUri(raw)) {
     return poolConfigFromPostgresUri(raw);
   }
@@ -101,15 +154,50 @@ let poolSignature: string | null = null;
 
 function poolSignatureFrom(cfg: PoolConfig): string {
   if (cfg.connectionString && isPostgresUri(cfg.connectionString)) {
-    const meta = metaFromPostgresUri(cfg.connectionString);
-    return `${meta.host}:${meta.port}/${meta.database}:${meta.user}`;
+    return `uri:${normalizeConnectionInput(cfg.connectionString)}`;
   }
   return `${cfg.host}:${cfg.port}/${cfg.database}:${cfg.user}`;
 }
 
 export function getDevDbPool(): Pool {
   const cfg = resolvePoolConfig();
-  const signature = poolSignatureFrom(cfg);
+  let signature: string;
+  try {
+    signature = poolSignatureFrom(cfg);
+    // #region agent log
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a5396f" },
+      body: JSON.stringify({
+        sessionId: "a5396f",
+        runId: "pre-fix",
+        hypothesisId: "A",
+        location: "dev-db.ts:getDevDbPool",
+        message: "pool signature ok",
+        data: { usesUri: Boolean(cfg.connectionString), signatureKind: cfg.connectionString ? "uri" : "fields" },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  } catch (err) {
+    const e = err as Error & { code?: string };
+    // #region agent log
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a5396f" },
+      body: JSON.stringify({
+        sessionId: "a5396f",
+        runId: "pre-fix",
+        hypothesisId: "A",
+        location: "dev-db.ts:getDevDbPool",
+        message: "pool signature failed",
+        data: { code: e.code ?? e.name, errMessage: e.message },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    throw err;
+  }
 
   if (!pool || poolSignature !== signature) {
     if (pool) {
