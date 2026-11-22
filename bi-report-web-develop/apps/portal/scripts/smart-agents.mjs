@@ -108,6 +108,24 @@ async function syncAgentDependencies(py) {
   }
 }
 
+function isLoopbackOrchestratorUrl() {
+  const raw = process.env.SMART_ORCHESTRATOR_URL?.trim();
+  if (!raw) return true;
+  try {
+    const { hostname, port } = new URL(raw);
+    const loopback = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+    return loopback && (!port || port === "8100");
+  } catch {
+    return false;
+  }
+}
+
+/** @returns {boolean} whether npm dev/start should spawn the local Python stack on :8100 */
+export function shouldAutoStartLocalAgents() {
+  if (process.env.SMART_AUTO_START_AGENTS === "false") return false;
+  return isLoopbackOrchestratorUrl();
+}
+
 async function orchestratorUp() {
   try {
     const response = await fetch("http://127.0.0.1:8100/health", { signal: AbortSignal.timeout(2000) });
@@ -152,7 +170,15 @@ async function waitReady(maxMs = 45000) {
 
 /** @returns {import("child_process").ChildProcess[]} */
 export async function ensureSmartAgentsRunning() {
-  if (process.env.SMART_AUTO_START_AGENTS === "false") {
+  if (!shouldAutoStartLocalAgents()) {
+    const raw = process.env.SMART_ORCHESTRATOR_URL?.trim();
+    if (process.env.SMART_AUTO_START_AGENTS === "false") {
+      process.stderr.write("[SMART] SMART_AUTO_START_AGENTS=false — not starting local Python stack.\n");
+    } else if (raw) {
+      process.stderr.write(
+        `[SMART] SMART_ORCHESTRATOR_URL is not local :8100 (${raw}) — using remote SMART; not starting sidecar.\n`
+      );
+    }
     return [];
   }
 

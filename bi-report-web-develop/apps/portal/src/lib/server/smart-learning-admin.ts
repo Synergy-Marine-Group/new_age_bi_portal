@@ -1,27 +1,10 @@
 import "server-only";
-import { SignJWT } from "jose";
-
-function orchestratorBase(): string | null {
-  return process.env.SMART_ORCHESTRATOR_URL?.replace(/\/+$/, "") ?? null;
-}
-
-async function portalToken(email: string): Promise<string | null> {
-  const secret = process.env.SMART_ORCHESTRATOR_SECRET;
-  if (!secret) return null;
-  return new SignJWT({ email })
-    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-    .setIssuer("bi-portal")
-    .setAudience("smart-orchestrator")
-    .setSubject(email)
-    .setIssuedAt()
-    .setExpirationTime("120s")
-    .sign(new TextEncoder().encode(secret));
-}
+import { orchestratorBase, signOrchestratorToken } from "@/lib/server/smart-orchestrator";
 
 export async function fetchLearningProposals(email: string) {
   const base = orchestratorBase();
   if (!base) return { status: "error", message: "SMART_ORCHESTRATOR_URL not configured" };
-  const token = await portalToken(email);
+  const token = await signOrchestratorToken(email);
   if (!token) return { status: "error", message: "SMART_ORCHESTRATOR_SECRET not configured" };
   const response = await fetch(`${base}/learning/proposals`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -35,7 +18,7 @@ export async function fetchLearningProposals(email: string) {
 export async function generateLearningProposal(email: string) {
   const base = orchestratorBase();
   if (!base) return { status: "error", message: "SMART_ORCHESTRATOR_URL not configured" };
-  const token = await portalToken(email);
+  const token = await signOrchestratorToken(email);
   if (!token) return { status: "error", message: "SMART_ORCHESTRATOR_SECRET not configured" };
   const response = await fetch(`${base}/learning/generate`, {
     method: "POST",
@@ -50,7 +33,7 @@ export async function generateLearningProposal(email: string) {
 export async function applyLearningProposal(email: string, proposalId: string) {
   const base = orchestratorBase();
   if (!base) return { status: "error", message: "SMART_ORCHESTRATOR_URL not configured" };
-  const token = await portalToken(email);
+  const token = await signOrchestratorToken(email);
   if (!token) return { status: "error", message: "SMART_ORCHESTRATOR_SECRET not configured" };
   const response = await fetch(`${base}/learning/proposals/${encodeURIComponent(proposalId)}/apply`, {
     method: "POST",
@@ -65,7 +48,7 @@ export async function applyLearningProposal(email: string, proposalId: string) {
 export async function rejectLearningProposal(email: string, proposalId: string, reason: string) {
   const base = orchestratorBase();
   if (!base) return { status: "error", message: "SMART_ORCHESTRATOR_URL not configured" };
-  const token = await portalToken(email);
+  const token = await signOrchestratorToken(email);
   if (!token) return { status: "error", message: "SMART_ORCHESTRATOR_SECRET not configured" };
   const response = await fetch(`${base}/learning/proposals/${encodeURIComponent(proposalId)}/reject`, {
     method: "POST",

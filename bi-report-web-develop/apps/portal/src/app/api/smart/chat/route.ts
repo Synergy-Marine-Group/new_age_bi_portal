@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SignJWT } from "jose";
 import { emailFromBearer } from "@/lib/catalog/entra-user";
 import { loadReportsForUser } from "@/lib/catalog/fetch-reports";
+import {
+  SMART_DOWN,
+  isOrchestratorConfigured,
+  signOrchestratorToken,
+  smartFetch,
+} from "@/lib/server/smart-orchestrator";
 import type { PortalReport } from "@/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 180;
 
-const TOKEN_TTL_SECONDS = 120;
 // Must stay above the orchestrator's request_timeout_s (120 s) so the orchestrator, not this route,
 // decides when a long answer is too slow. The old 90 s cut streamed answers mid-way.
 const UPSTREAM_TIMEOUT_MS = 180_000;
-const SMART_DOWN = "SMART is currently down, raise an issue to bisupport@synergyship.com";
 
 interface ChatRequestBody {
   message?: unknown;
@@ -52,21 +56,8 @@ function catalogEntry(report: PortalReport) {
   };
 }
 
-async function signOrchestratorToken(email: string, secret: string) {
-  return new SignJWT({ email })
-    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-    .setIssuer("bi-portal")
-    .setAudience("smart-orchestrator")
-    .setSubject(email)
-    .setIssuedAt()
-    .setExpirationTime(`${TOKEN_TTL_SECONDS}s`)
-    .sign(new TextEncoder().encode(secret));
-}
-
 export async function POST(request: NextRequest) {
-  const baseUrl = process.env.SMART_ORCHESTRATOR_URL?.replace(/\/+$/, "");
-  const secret = process.env.SMART_ORCHESTRATOR_SECRET;
-  if (!baseUrl || !secret) {
+  if (!isOrchestratorConfigured()) {
     return json(SMART_DOWN, 503);
   }
 
@@ -119,23 +110,24 @@ export async function POST(request: NextRequest) {
     context.report_name = report.title;
   }
 
-  const token = await signOrchestratorToken(email, secret);
+  const token = await signOrchestratorToken(email);
+  if (!token) return json(SMART_DOWN, 503);
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   request.signal.addEventListener("abort", () => controller.abort());
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${baseUrl}/chat`, {
+    upstream = await smartFetch("/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
-        Authorization: `Bearer ${token}`,
       },
+      bearerToken: token,
       body: JSON.stringify({ message, conversation_id: conversationId, context }),
       signal: controller.signal,
-      cache: "no-store",
     });
   } catch {
     clearTimeout(timer);
