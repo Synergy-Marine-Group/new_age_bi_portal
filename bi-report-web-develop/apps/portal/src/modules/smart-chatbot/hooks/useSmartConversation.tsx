@@ -140,6 +140,21 @@ export function SmartConversationProvider({
           });
         } catch (error) {
           if (!(error instanceof OrchestratorUnavailableError)) throw error;
+          // #region agent log
+          fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+            body: JSON.stringify({
+              sessionId: "c6513d",
+              runId: "pre-fix",
+              hypothesisId: "H1-H2",
+              location: "useSmartConversation.tsx:fallback",
+              message: "using_placeholder_fallback",
+              data: { reason: error instanceof Error ? error.message : "unknown" },
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
           setLastUsedFallback(true);
           reply = await fallbackProvider.chat(history, context);
         }

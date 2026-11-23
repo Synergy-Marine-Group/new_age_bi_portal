@@ -10,6 +10,26 @@ export class PlaceholderGPT5Provider implements AIProvider {
     const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
     const apiKey = process.env.AZURE_OPENAI_API_KEY;
     const deployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? "gpt-5";
+    // #region agent log
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+      body: JSON.stringify({
+        sessionId: "c6513d",
+        runId: "pre-fix",
+        hypothesisId: "H3",
+        location: "PlaceholderGPT5Provider.ts:chat",
+        message: "placeholder_env_check",
+        data: {
+          hasEndpoint: Boolean(endpoint),
+          hasApiKey: Boolean(apiKey),
+          hasDeployment: Boolean(deployment),
+          runtime: "browser",
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
 
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     const question = lastUser?.content ?? "";

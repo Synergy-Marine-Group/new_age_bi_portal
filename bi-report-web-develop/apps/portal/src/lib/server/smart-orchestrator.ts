@@ -29,9 +29,31 @@ export function orchestratorBase(): string | null {
   return url;
 }
 
+/** Same fallbacks as agents/scripts/bootstrap_local_env.py for portal JWT → orchestrator. */
 export function orchestratorSecret(): string | null {
-  const secret = process.env.SMART_ORCHESTRATOR_SECRET?.trim();
+  const secret =
+    process.env.SMART_ORCHESTRATOR_SECRET?.trim() ||
+    process.env.PORTAL_JWT_SECRET?.trim() ||
+    process.env.JWT_SECRET?.trim();
   return secret || null;
+}
+
+export function orchestratorUrlHostname(): string | null {
+  const url = trimUrl(process.env.SMART_ORCHESTRATOR_URL);
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/** True when SMART_ORCHESTRATOR_URL is the portal itself (Next.js), not the Python stack. */
+export function orchestratorPointsToPortalHost(portalHost: string | null | undefined): boolean {
+  const orchHost = orchestratorUrlHostname();
+  if (!orchHost || !portalHost) return false;
+  const normalized = portalHost.toLowerCase().split(":")[0];
+  return orchHost === normalized;
 }
 
 export function isOrchestratorConfigured(): boolean {
@@ -92,13 +114,86 @@ export class OrchestratorConfigError extends Error {
   }
 }
 
-export function smartStatusConfigMessage(): string {
-  if (!trimUrl(process.env.SMART_ORCHESTRATOR_URL) || !orchestratorSecret()) {
-    return "Set SMART_ORCHESTRATOR_URL and SMART_ORCHESTRATOR_SECRET (Amplify env vars in production).";
+export type SmartEnvKeyPresence = {
+  SMART_ORCHESTRATOR_URL: boolean;
+  SMART_ORCHESTRATOR_SECRET: boolean;
+  PORTAL_JWT_SECRET: boolean;
+  JWT_SECRET: boolean;
+  AZURE_OPENAI_ENDPOINT: boolean;
+  AZURE_OPENAI_API_KEY: boolean;
+  SMART_AUTO_START_AGENTS: boolean;
+};
+
+export function smartEnvKeyPresence(): SmartEnvKeyPresence {
+  return {
+    SMART_ORCHESTRATOR_URL: Boolean(process.env.SMART_ORCHESTRATOR_URL?.trim()),
+    SMART_ORCHESTRATOR_SECRET: Boolean(process.env.SMART_ORCHESTRATOR_SECRET?.trim()),
+    PORTAL_JWT_SECRET: Boolean(process.env.PORTAL_JWT_SECRET?.trim()),
+    JWT_SECRET: Boolean(process.env.JWT_SECRET?.trim()),
+    AZURE_OPENAI_ENDPOINT: Boolean(process.env.AZURE_OPENAI_ENDPOINT?.trim()),
+    AZURE_OPENAI_API_KEY: Boolean(process.env.AZURE_OPENAI_API_KEY?.trim()),
+    SMART_AUTO_START_AGENTS: Boolean(process.env.SMART_AUTO_START_AGENTS?.trim()),
+  };
+}
+
+export function orchestratorConfigDiagnostics(portalHost?: string | null): {
+  hasSmartOrchestratorUrl: boolean;
+  hasSmartOrchestratorSecret: boolean;
+  effectiveSecretFromAlias: boolean;
+  localhostUrlRejected: boolean;
+  orchestratorHostname: string | null;
+  pointsToPortalHost: boolean;
+  envKeysPresent: SmartEnvKeyPresence;
+} {
+  const rawUrl = trimUrl(process.env.SMART_ORCHESTRATOR_URL);
+  const hasExplicitSecret = Boolean(process.env.SMART_ORCHESTRATOR_SECRET?.trim());
+  const hasSecret = Boolean(orchestratorSecret());
+  const localhostBlocked = Boolean(
+    rawUrl && process.env.NODE_ENV === "production" && isLoopbackHost(rawUrl)
+  );
+  const envKeysPresent = smartEnvKeyPresence();
+  return {
+    hasSmartOrchestratorUrl: Boolean(rawUrl),
+    hasSmartOrchestratorSecret: hasSecret,
+    effectiveSecretFromAlias: hasSecret && !hasExplicitSecret,
+    localhostUrlRejected: localhostBlocked,
+    orchestratorHostname: orchestratorUrlHostname(),
+    pointsToPortalHost: orchestratorPointsToPortalHost(portalHost),
+    envKeysPresent,
+  };
+}
+
+export function smartStatusConfigMessage(portalHost?: string | null): string {
+  const diag = orchestratorConfigDiagnostics(portalHost);
+  const {
+    hasSmartOrchestratorUrl,
+    hasSmartOrchestratorSecret,
+    localhostUrlRejected,
+    pointsToPortalHost,
+    envKeysPresent,
+  } = diag;
+  if (pointsToPortalHost) {
+    return "SMART_ORCHESTRATOR_URL must be the Python SMART backend (App Runner, EC2, etc.), not this Next.js Amplify app URL. AZURE_OPENAI_* on the portal does not run SMART.";
   }
-  const url = trimUrl(process.env.SMART_ORCHESTRATOR_URL);
-  if (url && process.env.NODE_ENV === "production" && isLoopbackHost(url)) {
+  if (localhostUrlRejected) {
     return "SMART_ORCHESTRATOR_URL must not point to localhost in production. Set the HTTPS URL of the Python SMART service.";
+  }
+  if (
+    !envKeysPresent.SMART_ORCHESTRATOR_URL &&
+    !envKeysPresent.SMART_ORCHESTRATOR_SECRET &&
+    !envKeysPresent.PORTAL_JWT_SECRET &&
+    !envKeysPresent.JWT_SECRET
+  ) {
+    return "No SMART env vars are visible at runtime on Amplify. Add them under Hosting → Environment variables (not only Backend), then redeploy.";
+  }
+  if (!hasSmartOrchestratorUrl && !hasSmartOrchestratorSecret) {
+    return "Set SMART_ORCHESTRATOR_URL and SMART_ORCHESTRATOR_SECRET (Amplify env vars in production). AZURE_OPENAI_* alone does not enable SMART.";
+  }
+  if (!hasSmartOrchestratorUrl) {
+    return "SMART_ORCHESTRATOR_URL is missing in Amplify. Set it to the HTTPS base URL of your Python SMART service.";
+  }
+  if (!hasSmartOrchestratorSecret) {
+    return "Set SMART_ORCHESTRATOR_SECRET (or PORTAL_JWT_SECRET / JWT_SECRET) in Amplify Hosting env vars. It must match PORTAL_JWT_SECRET on the Python SMART service.";
   }
   return "Set SMART_ORCHESTRATOR_URL and SMART_ORCHESTRATOR_SECRET in .env.local, then restart npm run dev.";
 }

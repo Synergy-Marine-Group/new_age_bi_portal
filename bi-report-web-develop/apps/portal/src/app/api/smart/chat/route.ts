@@ -57,7 +57,47 @@ function catalogEntry(report: PortalReport) {
 }
 
 export async function POST(request: NextRequest) {
+  // #region agent log
+  {
+    const rawUrl = process.env.SMART_ORCHESTRATOR_URL?.trim() ?? "";
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+      body: JSON.stringify({
+        sessionId: "c6513d",
+        runId: "pre-fix",
+        hypothesisId: "H1-H4",
+        location: "api/smart/chat/route.ts:POST:entry",
+        message: "smart_chat_entry",
+        data: {
+          nodeEnv: process.env.NODE_ENV,
+          configured: isOrchestratorConfigured(),
+          hasSecret: Boolean(process.env.SMART_ORCHESTRATOR_SECRET?.trim()),
+          hasRawUrl: Boolean(rawUrl),
+          rawUrlHost: rawUrl ? (() => { try { return new URL(rawUrl).hostname; } catch { return "invalid"; } })() : "",
+          hasAzureOpenAiEndpoint: Boolean(process.env.AZURE_OPENAI_ENDPOINT?.trim()),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
   if (!isOrchestratorConfigured()) {
+  // #region agent log
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+      body: JSON.stringify({
+        sessionId: "c6513d",
+        runId: "pre-fix",
+        hypothesisId: "H1",
+        location: "api/smart/chat/route.ts:POST:not_configured",
+        message: "orchestrator_not_configured_503",
+        data: {},
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  // #endregion
     return json(SMART_DOWN, 503);
   }
 
@@ -129,13 +169,43 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({ message, conversation_id: conversationId, context }),
       signal: controller.signal,
     });
-  } catch {
+  } catch (err) {
     clearTimeout(timer);
+    // #region agent log
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+      body: JSON.stringify({
+        sessionId: "c6513d",
+        runId: "pre-fix",
+        hypothesisId: "H2",
+        location: "api/smart/chat/route.ts:POST:upstream_fetch_failed",
+        message: "upstream_fetch_failed",
+        data: { errorName: err instanceof Error ? err.name : "unknown" },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     return json(SMART_DOWN, 503);
   }
 
   if (!upstream.ok || !upstream.body) {
     clearTimeout(timer);
+    // #region agent log
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+      body: JSON.stringify({
+        sessionId: "c6513d",
+        runId: "pre-fix",
+        hypothesisId: "H2",
+        location: "api/smart/chat/route.ts:POST:upstream_bad_status",
+        message: "upstream_bad_status",
+        data: { status: upstream.status },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     const status = upstream.status === 429 ? 429 : 502;
     return json(status === 429 ? "Too many requests, please wait a moment" : SMART_DOWN, status);
   }

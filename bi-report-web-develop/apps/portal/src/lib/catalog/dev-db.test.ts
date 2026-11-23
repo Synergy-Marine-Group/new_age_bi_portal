@@ -8,6 +8,8 @@ const ENV_KEYS = [
   "BI_REPORT_DB_NAME",
   "BI_REPORT_DB_USER",
   "BI_REPORT_DB_PASSWORD",
+  "LAMBDA_DB_BRIDGE_URL",
+  "LAMBDA_DB_BRIDGE_SECRET",
 ] as const;
 
 function clearDbEnv() {

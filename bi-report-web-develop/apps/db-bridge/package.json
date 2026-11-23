@@ -1,0 +1,13 @@
+{
+  "name": "bi-portal-db-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/handler.mjs",
+  "scripts": {
+    "start": "node src/local-server.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  }
+}

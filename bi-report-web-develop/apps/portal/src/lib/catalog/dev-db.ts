@@ -1,4 +1,5 @@
 import { Pool, type PoolConfig } from "pg";
+import { createBridgePool, isBridgeMode, type BridgePool } from "./db-bridge";
 
 const REQUIRED_DB_VARS = [
   "BI_REPORT_DB_HOST",
@@ -15,8 +16,8 @@ const POOL_OPTIONS = {
   idleTimeoutMillis: 30000,
 };
 
-// Config comes only from env vars (set in .env.local locally, Amplify env vars when deployed).
-// No file reads: the .NET API's appsettings is not available on the Amplify Linux runtime.
+export type DevDbPool = Pool | BridgePool;
+
 function normalizeConnectionInput(raw: string): string {
   let s = raw.trim();
   if (
@@ -82,7 +83,6 @@ function poolConfigFromPostgresUri(uri: string): PoolConfig {
   };
 }
 
-/** Parse postgres URI without WHATWG URL (handles encoded passwords and avoids ERR_INVALID_URL). */
 const POSTGRES_URI_META_RE =
   /^postgres(?:ql)?:\/\/(?:([^:/]+)(?::([^@]*))?@)?([^:@/]+)(?::(\d+))?\/([^?#\s]*)/i;
 
@@ -112,45 +112,17 @@ export function metaFromPostgresUri(uri: string): {
   };
 }
 
-/** Resolves pool config from env (exported for tests). */
 export function resolvePoolConfig(): PoolConfig {
   const raw = loadRawConnectionValue();
-  // #region agent log
-  fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a5396f" },
-    body: JSON.stringify({
-      sessionId: "a5396f",
-      runId: "pre-fix",
-      hypothesisId: "A-B",
-      location: "dev-db.ts:resolvePoolConfig",
-      message: "db env resolution",
-      data: {
-        source: process.env.SQL_CONNECTION_STRING?.trim()
-          ? "SQL_CONNECTION_STRING"
-          : process.env.BI_REPORT_DB_CONNECTION?.trim()
-            ? "BI_REPORT_DB_CONNECTION"
-            : process.env.BI_REPORT_DB_HOST?.trim()
-              ? "BI_REPORT_DB_DISCRETE"
-              : "none",
-        isUri: Boolean(raw && isPostgresUri(raw)),
-        hadWrappingQuotes:
-          Boolean(process.env.SQL_CONNECTION_STRING?.trim()) &&
-          /^["']/.test(process.env.SQL_CONNECTION_STRING!.trim()),
-        rawLength: raw.length,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   if (raw && isPostgresUri(raw)) {
     return poolConfigFromPostgresUri(raw);
   }
   return parseNpgsql(raw);
 }
 
-let pool: Pool | null = null;
-let poolSignature: string | null = null;
+let pgPool: Pool | null = null;
+let pgPoolSignature: string | null = null;
+let bridgePool: BridgePool | null = null;
 
 function poolSignatureFrom(cfg: PoolConfig): string {
   if (cfg.connectionString && isPostgresUri(cfg.connectionString)) {
@@ -159,63 +131,42 @@ function poolSignatureFrom(cfg: PoolConfig): string {
   return `${cfg.host}:${cfg.port}/${cfg.database}:${cfg.user}`;
 }
 
-export function getDevDbPool(): Pool {
-  const cfg = resolvePoolConfig();
-  let signature: string;
-  try {
-    signature = poolSignatureFrom(cfg);
-    // #region agent log
-    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a5396f" },
-      body: JSON.stringify({
-        sessionId: "a5396f",
-        runId: "pre-fix",
-        hypothesisId: "A",
-        location: "dev-db.ts:getDevDbPool",
-        message: "pool signature ok",
-        data: { usesUri: Boolean(cfg.connectionString), signatureKind: cfg.connectionString ? "uri" : "fields" },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-  } catch (err) {
-    const e = err as Error & { code?: string };
-    // #region agent log
-    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a5396f" },
-      body: JSON.stringify({
-        sessionId: "a5396f",
-        runId: "pre-fix",
-        hypothesisId: "A",
-        location: "dev-db.ts:getDevDbPool",
-        message: "pool signature failed",
-        data: { code: e.code ?? e.name, errMessage: e.message },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-    throw err;
+export function getDevDbPool(): DevDbPool {
+  if (isBridgeMode()) {
+    if (!bridgePool) {
+      bridgePool = createBridgePool();
+    }
+    return bridgePool;
   }
 
-  if (!pool || poolSignature !== signature) {
-    if (pool) {
-      pool.end().catch(() => {});
+  const cfg = resolvePoolConfig();
+  const signature = poolSignatureFrom(cfg);
+
+  if (!pgPool || pgPoolSignature !== signature) {
+    if (pgPool) {
+      pgPool.end().catch(() => {});
     }
-    pool = new Pool(cfg);
-    poolSignature = signature;
-    pool.on("error", () => {
-      pool?.end().catch(() => {});
-      pool = null;
-      poolSignature = null;
+    pgPool = new Pool(cfg);
+    pgPoolSignature = signature;
+    pgPool.on("error", () => {
+      pgPool?.end().catch(() => {});
+      pgPool = null;
+      pgPoolSignature = null;
     });
   }
 
-  return pool;
+  return pgPool;
 }
 
 export function getDevDbMeta() {
+  if (isBridgeMode()) {
+    return {
+      host: "lambda-db-bridge",
+      database: "(remote)",
+      port: 443,
+      user: "bridge",
+    };
+  }
   const cfg = resolvePoolConfig();
   if (cfg.connectionString && isPostgresUri(cfg.connectionString)) {
     return metaFromPostgresUri(cfg.connectionString);
