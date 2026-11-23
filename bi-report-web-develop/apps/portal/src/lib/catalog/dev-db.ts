@@ -1,5 +1,6 @@
 import { Pool, type PoolConfig } from "pg";
-import { createBridgePool, isBridgeMode, type BridgePool } from "./db-bridge";
+import { createBridgePool, isBridgeMode } from "./db-bridge";
+import type { DevDbPool } from "./dev-db-types";
 
 const REQUIRED_DB_VARS = [
   "BI_REPORT_DB_HOST",
@@ -16,7 +17,7 @@ const POOL_OPTIONS = {
   idleTimeoutMillis: 30000,
 };
 
-export type DevDbPool = Pool | BridgePool;
+export type { DevDbPool } from "./dev-db-types";
 
 function normalizeConnectionInput(raw: string): string {
   let s = raw.trim();
@@ -122,7 +123,7 @@ export function resolvePoolConfig(): PoolConfig {
 
 let pgPool: Pool | null = null;
 let pgPoolSignature: string | null = null;
-let bridgePool: BridgePool | null = null;
+let bridgePool: DevDbPool | null = null;
 
 function poolSignatureFrom(cfg: PoolConfig): string {
   if (cfg.connectionString && isPostgresUri(cfg.connectionString)) {
@@ -134,7 +135,7 @@ function poolSignatureFrom(cfg: PoolConfig): string {
 export function getDevDbPool(): DevDbPool {
   if (isBridgeMode()) {
     if (!bridgePool) {
-      bridgePool = createBridgePool();
+      bridgePool = createBridgePool() as DevDbPool;
     }
     return bridgePool;
   }
@@ -155,7 +156,7 @@ export function getDevDbPool(): DevDbPool {
     });
   }
 
-  return pgPool;
+  return pgPool as unknown as DevDbPool;
 }
 
 export function getDevDbMeta() {

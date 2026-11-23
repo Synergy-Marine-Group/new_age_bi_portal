@@ -1,8 +1,9 @@
 import type { PortalReport } from "@/types";
 import { getDevDbPool } from "./dev-db";
+import type { DevDbPool } from "./dev-db-types";
 import { normalizeRls, uniqueRlsRoleNames, type RlsMapping } from "./reports-catalog";
 
-type DbPool = ReturnType<typeof getDevDbPool>;
+type DbPool = DevDbPool;
 
 export interface FabricCatalogRow {
   id: string;

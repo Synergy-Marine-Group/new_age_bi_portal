@@ -9,28 +9,10 @@ export type BridgeExecRequest = {
   sessionId?: string;
 };
 
-export type BridgeQueryResult<T = Record<string, unknown>> = {
-  rows: T[];
-  rowCount: number;
-};
+import type { DevDbPool, DevDbQueryResult } from "./dev-db-types";
 
-export type BridgePoolClient = {
-  query: <T extends Record<string, unknown> = Record<string, unknown>>(
-    sql: string,
-    params?: unknown[],
-  ) => Promise<BridgeQueryResult<T>>;
-  release: () => Promise<void>;
-};
-
-export type BridgePool = {
-  query: <T extends Record<string, unknown> = Record<string, unknown>>(
-    sql: string,
-    params?: unknown[],
-  ) => Promise<BridgeQueryResult<T>>;
-  connect: () => Promise<BridgePoolClient>;
-  on: (event: "error", listener: (err: Error) => void) => BridgePool;
-  end: () => Promise<void>;
-};
+export type BridgeQueryResult<T = Record<string, unknown>> = DevDbQueryResult<T>;
+export type BridgePool = DevDbPool;
 
 function bridgeBaseUrl(): string {
   const raw = process.env.LAMBDA_DB_BRIDGE_URL?.trim();
@@ -48,7 +30,7 @@ function bridgeSecret(): string {
   return secret;
 }
 
-async function bridgeExec<T extends Record<string, unknown>>(
+async function bridgeExec<T = Record<string, unknown>>(
   payload: BridgeExecRequest,
 ): Promise<BridgeQueryResult<T>> {
   const body = JSON.stringify(payload);
@@ -82,8 +64,8 @@ export function isBridgeMode(): boolean {
 export function createBridgePool(): BridgePool {
   const errorListeners: Array<(err: Error) => void> = [];
 
-  const pool: BridgePool = {
-    async query<T extends Record<string, unknown>>(sql: string, params?: unknown[]) {
+  const pool: DevDbPool = {
+    async query<T = Record<string, unknown>>(sql: string, params?: unknown[]) {
       return bridgeExec<T>({ op: "query", sql, params });
     },
     async connect() {
@@ -105,7 +87,7 @@ export function createBridgePool(): BridgePool {
         throw new Error("Bridge did not return sessionId");
       }
       return {
-        async query<T extends Record<string, unknown>>(sql: string, params?: unknown[]) {
+        async query<T = Record<string, unknown>>(sql: string, params?: unknown[]) {
           const trimmed = sql.trim().toUpperCase();
           if (trimmed === "BEGIN") {
             await bridgeExec({ op: "query", sql: "BEGIN", sessionId });
