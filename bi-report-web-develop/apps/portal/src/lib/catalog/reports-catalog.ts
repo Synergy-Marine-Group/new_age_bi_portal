@@ -1,5 +1,6 @@
 import type { CategoryPathItem, PortalReport, UserInfo } from "@/types";
 import { getDevDbPool } from "./dev-db";
+import type { DevDbPool } from "./dev-db-types";
 import { buildCategoryPath } from "./category-hierarchy";
 
 const SYSTEM_ADMIN = "System Admin";
@@ -109,7 +110,7 @@ function toPortalReport(
   };
 }
 
-type DbPool = ReturnType<typeof getDevDbPool>;
+type DbPool = DevDbPool;
 
 // parent_id/display_order exist only in some environments' schema (not in the API's EF migrations).
 let hierarchySupported: boolean | undefined;

@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SignJWT } from "jose";
 import { emailFromBearer } from "@/lib/catalog/entra-user";
 import { loadReportsForUser } from "@/lib/catalog/fetch-reports";
+import {
+  SMART_DOWN,
+  isOrchestratorConfigured,
+  signOrchestratorToken,
+  smartFetch,
+} from "@/lib/server/smart-orchestrator";
 import type { PortalReport } from "@/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 180;
 
-const TOKEN_TTL_SECONDS = 120;
 // Must stay above the orchestrator's request_timeout_s (120 s) so the orchestrator, not this route,
 // decides when a long answer is too slow. The old 90 s cut streamed answers mid-way.
 const UPSTREAM_TIMEOUT_MS = 180_000;
-const SMART_DOWN = "SMART is currently down, raise an issue to bisupport@synergyship.com";
 
 interface ChatRequestBody {
   message?: unknown;
@@ -52,21 +56,48 @@ function catalogEntry(report: PortalReport) {
   };
 }
 
-async function signOrchestratorToken(email: string, secret: string) {
-  return new SignJWT({ email })
-    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-    .setIssuer("bi-portal")
-    .setAudience("smart-orchestrator")
-    .setSubject(email)
-    .setIssuedAt()
-    .setExpirationTime(`${TOKEN_TTL_SECONDS}s`)
-    .sign(new TextEncoder().encode(secret));
-}
-
 export async function POST(request: NextRequest) {
-  const baseUrl = process.env.SMART_ORCHESTRATOR_URL?.replace(/\/+$/, "");
-  const secret = process.env.SMART_ORCHESTRATOR_SECRET;
-  if (!baseUrl || !secret) {
+  // #region agent log
+  {
+    const rawUrl = process.env.SMART_ORCHESTRATOR_URL?.trim() ?? "";
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+      body: JSON.stringify({
+        sessionId: "c6513d",
+        runId: "pre-fix",
+        hypothesisId: "H1-H4",
+        location: "api/smart/chat/route.ts:POST:entry",
+        message: "smart_chat_entry",
+        data: {
+          nodeEnv: process.env.NODE_ENV,
+          configured: isOrchestratorConfigured(),
+          hasSecret: Boolean(process.env.SMART_ORCHESTRATOR_SECRET?.trim()),
+          hasRawUrl: Boolean(rawUrl),
+          rawUrlHost: rawUrl ? (() => { try { return new URL(rawUrl).hostname; } catch { return "invalid"; } })() : "",
+          hasAzureOpenAiEndpoint: Boolean(process.env.AZURE_OPENAI_ENDPOINT?.trim()),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
+  if (!isOrchestratorConfigured()) {
+  // #region agent log
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+      body: JSON.stringify({
+        sessionId: "c6513d",
+        runId: "pre-fix",
+        hypothesisId: "H1",
+        location: "api/smart/chat/route.ts:POST:not_configured",
+        message: "orchestrator_not_configured_503",
+        data: {},
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  // #endregion
     return json(SMART_DOWN, 503);
   }
 
@@ -119,31 +150,62 @@ export async function POST(request: NextRequest) {
     context.report_name = report.title;
   }
 
-  const token = await signOrchestratorToken(email, secret);
+  const token = await signOrchestratorToken(email);
+  if (!token) return json(SMART_DOWN, 503);
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   request.signal.addEventListener("abort", () => controller.abort());
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${baseUrl}/chat`, {
+    upstream = await smartFetch("/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
-        Authorization: `Bearer ${token}`,
       },
+      bearerToken: token,
       body: JSON.stringify({ message, conversation_id: conversationId, context }),
       signal: controller.signal,
-      cache: "no-store",
     });
-  } catch {
+  } catch (err) {
     clearTimeout(timer);
+    // #region agent log
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+      body: JSON.stringify({
+        sessionId: "c6513d",
+        runId: "pre-fix",
+        hypothesisId: "H2",
+        location: "api/smart/chat/route.ts:POST:upstream_fetch_failed",
+        message: "upstream_fetch_failed",
+        data: { errorName: err instanceof Error ? err.name : "unknown" },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     return json(SMART_DOWN, 503);
   }
 
   if (!upstream.ok || !upstream.body) {
     clearTimeout(timer);
+    // #region agent log
+    fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+      body: JSON.stringify({
+        sessionId: "c6513d",
+        runId: "pre-fix",
+        hypothesisId: "H2",
+        location: "api/smart/chat/route.ts:POST:upstream_bad_status",
+        message: "upstream_bad_status",
+        data: { status: upstream.status },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     const status = upstream.status === 429 ? 429 : 502;
     return json(status === 429 ? "Too many requests, please wait a moment" : SMART_DOWN, status);
   }

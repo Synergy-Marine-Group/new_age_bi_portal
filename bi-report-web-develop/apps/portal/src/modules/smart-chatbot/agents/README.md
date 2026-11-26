@@ -91,7 +91,21 @@ Rotate the client secrets that are hardcoded in `PO_SPEND_Powerbi_rls_embed_scri
 
 Requires Python 3.11+.
 
-**Local portal (recommended):** `npm run dev` in `apps/portal` starts Next.js and the SMART Python stack on **:8100**. Before starting agents, the dev script creates `%USERPROFILE%\.venvs\smart-agents` when missing and runs `pip install -e .` (includes **pythonnet** for SemantIQ XMLA). Override the interpreter with `SMART_PYTHON`. Set `SMART_AUTO_START_AGENTS=false` to skip auto-start. If `:8100` was already running from an older session, restart it after dependency changes so XMLA code loads.
+### AWS Amplify (Next.js portal only)
+
+Amplify Hosting runs **Node** only. The browser talks to Next.js (`/api/smart/*`); Next.js calls the Python unified stack using **`SMART_ORCHESTRATOR_URL`** (public HTTPS). Do not point production at `http://127.0.0.1:8100`.
+
+In Amplify environment variables for the portal:
+
+- `SMART_ORCHESTRATOR_URL` — base URL of the long-running Python service (`python -m smart_orchestrator.app`)
+- `SMART_ORCHESTRATOR_SECRET` — same value as `PORTAL_JWT_SECRET` on that service
+- `SMART_AUTO_START_AGENTS=false` — portal must not spawn a local Python sidecar
+
+On the **Python host**, keep MCP on loopback inside the same process (`SEMANTIQ_MCP_URL` / `NOVA_MCP_URL` = `http://127.0.0.1:<port>/mcp/...`). MCP is not exposed through Next.js.
+
+### Local development
+
+**Local portal (recommended):** `npm run dev` in `apps/portal` starts Next.js and the SMART Python stack on **:8100** when `SMART_ORCHESTRATOR_URL` is loopback. Before starting agents, the dev script creates `%USERPROFILE%\.venvs\smart-agents` when missing and runs `pip install -e .` (includes **pythonnet** for SemantIQ XMLA). Override the interpreter with `SMART_PYTHON`. Set `SMART_AUTO_START_AGENTS=false` to skip auto-start. If `:8100` was already running from an older session, restart it after dependency changes so XMLA code loads.
 
 **Manual Python only** (same venv path as `npm run dev`):
 

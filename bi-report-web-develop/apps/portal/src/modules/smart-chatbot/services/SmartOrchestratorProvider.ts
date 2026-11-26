@@ -139,10 +139,42 @@ export class SmartOrchestratorProvider implements AIProvider {
       });
     } catch (error) {
       if ((error as Error).name === "AbortError") throw error;
+      // #region agent log
+      fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+        body: JSON.stringify({
+          sessionId: "c6513d",
+          runId: "pre-fix",
+          hypothesisId: "H2",
+          location: "SmartOrchestratorProvider.ts:fetch_failed",
+          message: "client_fetch_api_smart_chat_failed",
+          data: { errorName: (error as Error).name },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       throw new OrchestratorUnavailableError("SMART orchestrator is unreachable");
     }
 
-    if (response.status === 503) throw new OrchestratorUnavailableError("SMART orchestrator is not available");
+    if (response.status === 503) {
+      // #region agent log
+      fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c6513d" },
+        body: JSON.stringify({
+          sessionId: "c6513d",
+          runId: "pre-fix",
+          hypothesisId: "H1",
+          location: "SmartOrchestratorProvider.ts:503",
+          message: "client_received_503",
+          data: { status: 503 },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      throw new OrchestratorUnavailableError("SMART orchestrator is not available");
+    }
     if (!response.ok || !response.body) {
       const data = (await response.json().catch(() => null)) as { message?: string } | null;
       return {

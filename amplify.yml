@@ -1,19 +1,19 @@
-
 version: 1
 
 applications:
-
   # ==========================================
   # APPLICATION 1: BI PORTAL WEB
   # ==========================================
   - appRoot: bi-report-web-develop/apps/portal
-
     frontend:
       phases:
         preBuild:
           commands:
             - npm ci
 
+        # .env.production is written by apps/portal/scripts/amplify-sync-env-production.mjs
+        # (postinstall, runs during npm ci). Do NOT grep env here: missing variables
+        # fail the build, and amplify-build.sh truncates the file.
         build:
           commands:
             - npm run build
@@ -23,28 +23,6 @@ applications:
         files:
           - '**/*'
 
-      cache:
-        paths:
-          - node_modules/**/*
-          - .next/cache/**/*
-
-
-  # ==========================================
-  # APPLICATION 2: BI PORTAL API
-  # ==========================================
- - appRoot: bi-report-api-develop
-    frontend:
-      phases:
-        preBuild:
-          commands:
-            - npm install
-        build:
-          commands:
-            - npm run build
-      artifacts:
-        baseDirectory: .next
-        files:
-          - '**/*'
       cache:
         paths:
           - node_modules/**/*

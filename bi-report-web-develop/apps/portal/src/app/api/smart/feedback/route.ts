@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SignJWT } from "jose";
 import { emailFromBearer } from "@/lib/catalog/entra-user";
+import {
+  isOrchestratorConfigured,
+  signOrchestratorToken,
+  smartFetch,
+} from "@/lib/server/smart-orchestrator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TOKEN_TTL_SECONDS = 120;
 const REASONS = new Set(["wrong_report", "wrong_number", "missing_data", "slow", "unclear", "other"]);
 
 interface FeedbackBody {
@@ -20,9 +23,7 @@ function json(message: string, status: number) {
 }
 
 export async function POST(request: NextRequest) {
-  const baseUrl = process.env.SMART_ORCHESTRATOR_URL?.replace(/\/+$/, "");
-  const secret = process.env.SMART_ORCHESTRATOR_SECRET;
-  if (!baseUrl || !secret) return json("Feedback is unavailable", 503);
+  if (!isOrchestratorConfigured()) return json("Feedback is unavailable", 503);
 
   let email: string | null = null;
   try {
@@ -39,21 +40,15 @@ export async function POST(request: NextRequest) {
   const comment = typeof body.comment === "string" ? body.comment.trim().slice(0, 1000) : "";
   if (!requestId || !rating) return json("Invalid feedback", 400);
 
-  const token = await new SignJWT({ email })
-    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-    .setIssuer("bi-portal")
-    .setAudience("smart-orchestrator")
-    .setSubject(email)
-    .setIssuedAt()
-    .setExpirationTime(`${TOKEN_TTL_SECONDS}s`)
-    .sign(new TextEncoder().encode(secret));
+  const token = await signOrchestratorToken(email);
+  if (!token) return json("Feedback is unavailable", 503);
 
   try {
-    const upstream = await fetch(`${baseUrl}/feedback`, {
+    const upstream = await smartFetch("/feedback", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
+      bearerToken: token,
       body: JSON.stringify({ request_id: requestId, rating, reason, comment: comment || null }),
-      cache: "no-store",
       signal: AbortSignal.timeout(10_000),
     });
     if (upstream.ok) return NextResponse.json({ status: "ok" });

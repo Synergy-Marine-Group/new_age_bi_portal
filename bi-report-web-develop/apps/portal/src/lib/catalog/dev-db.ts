@@ -1,21 +1,61 @@
-import { readFileSync } from "fs";
 import { Pool, type PoolConfig } from "pg";
+import { isUsableSqlConnectionString } from "./catalog-db-diagnostics";
+import { createBridgePool, isBridgeMode } from "./db-bridge";
+import type { DevDbPool } from "./dev-db-types";
 
-const DEFAULT_APPSETTINGS =
-  "C:\\Users\\anilkumar.c\\OneDrive - Synergy Maritime Private Limited\\WIP\\BI Portal Revamp\\bi-report-api-develop\\bi-report-api-develop\\PowerBi\\PowerBI.Api\\appsettings.Development.json";
+const REQUIRED_DB_VARS = [
+  "BI_REPORT_DB_HOST",
+  "BI_REPORT_DB_PORT",
+  "BI_REPORT_DB_NAME",
+  "BI_REPORT_DB_USER",
+  "BI_REPORT_DB_PASSWORD",
+] as const;
 
-function loadConnectionString(): string {
-  if (process.env.BI_REPORT_DB_CONNECTION?.trim()) {
-    return process.env.BI_REPORT_DB_CONNECTION.trim();
+const POOL_OPTIONS = {
+  ssl: { rejectUnauthorized: false } as const,
+  max: 6,
+  connectionTimeoutMillis: 20000,
+  idleTimeoutMillis: 30000,
+};
+
+export type { DevDbPool } from "./dev-db-types";
+
+function normalizeConnectionInput(raw: string): string {
+  let s = raw.trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"') && s.length >= 2) ||
+    (s.startsWith("'") && s.endsWith("'") && s.length >= 2)
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
+function isPostgresUri(value: string): boolean {
+  return /^postgres(ql)?:\/\//i.test(normalizeConnectionInput(value));
+}
+
+function loadRawConnectionValue(): string {
+  const fromAmplify = process.env.SQL_CONNECTION_STRING?.trim();
+  if (fromAmplify) {
+    const normalized = normalizeConnectionInput(fromAmplify);
+    if (isUsableSqlConnectionString(normalized)) {
+      return normalized;
+    }
   }
 
-  const filePath = process.env.BI_API_APPSETTINGS || DEFAULT_APPSETTINGS;
-  const raw = readFileSync(filePath, "utf8");
-  const match = raw.match(/"BIReportDbConnection"\s*:\s*"([^"]+)"/);
-  if (!match?.[1]) {
-    throw new Error("BIReportDbConnection was not found in appsettings.Development.json");
+  const fromConnection = process.env.BI_REPORT_DB_CONNECTION?.trim();
+  if (fromConnection) {
+    return normalizeConnectionInput(fromConnection);
   }
-  return match[1];
+
+  if (process.env.BI_REPORT_DB_HOST?.trim()) {
+    return "";
+  }
+
+  throw new Error(
+    `Portal catalog DB is not configured. Set SQL_CONNECTION_STRING, BI_REPORT_DB_CONNECTION, or ${REQUIRED_DB_VARS.join(", ")}.`,
+  );
 }
 
 function parseNpgsql(connectionString: string): PoolConfig {
@@ -37,41 +77,104 @@ function parseNpgsql(connectionString: string): PoolConfig {
     database,
     user: process.env.BI_REPORT_DB_USER?.trim() || map.username || map.user,
     password: process.env.BI_REPORT_DB_PASSWORD?.trim() || map.password,
-    ssl: { rejectUnauthorized: false },
-    max: 6,
-    connectionTimeoutMillis: 20000,
-    idleTimeoutMillis: 30000,
+    ...POOL_OPTIONS,
   };
 }
 
-let pool: Pool | null = null;
-let poolSignature: string | null = null;
+function poolConfigFromPostgresUri(uri: string): PoolConfig {
+  return {
+    connectionString: normalizeConnectionInput(uri),
+    ...POOL_OPTIONS,
+  };
+}
+
+const POSTGRES_URI_META_RE =
+  /^postgres(?:ql)?:\/\/(?:([^:/]+)(?::([^@]*))?@)?([^:@/]+)(?::(\d+))?\/([^?#\s]*)/i;
+
+export function metaFromPostgresUri(uri: string): {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+} {
+  const trimmed = normalizeConnectionInput(uri);
+  const match = trimmed.match(POSTGRES_URI_META_RE);
+  if (!match) {
+    throw new Error("Invalid postgres connection URI");
+  }
+  const [, userPart, , host, portPart, database] = match;
+  let user = userPart ?? "";
+  try {
+    user = decodeURIComponent(user);
+  } catch {
+    // keep raw user if percent-encoding is incomplete
+  }
+  return {
+    host,
+    port: Number(portPart || 5432),
+    database,
+    user,
+  };
+}
+
+export function resolvePoolConfig(): PoolConfig {
+  const raw = loadRawConnectionValue();
+  if (raw && isPostgresUri(raw)) {
+    return poolConfigFromPostgresUri(raw);
+  }
+  return parseNpgsql(raw);
+}
+
+let pgPool: Pool | null = null;
+let pgPoolSignature: string | null = null;
+let bridgePool: DevDbPool | null = null;
 
 function poolSignatureFrom(cfg: PoolConfig): string {
+  if (cfg.connectionString && isPostgresUri(cfg.connectionString)) {
+    return `uri:${normalizeConnectionInput(cfg.connectionString)}`;
+  }
   return `${cfg.host}:${cfg.port}/${cfg.database}:${cfg.user}`;
 }
 
-export function getDevDbPool(): Pool {
-  const cfg = parseNpgsql(loadConnectionString());
+export function getDevDbPool(): DevDbPool {
+  if (isBridgeMode()) {
+    if (!bridgePool) {
+      bridgePool = createBridgePool() as DevDbPool;
+    }
+    return bridgePool;
+  }
+
+  const cfg = resolvePoolConfig();
   const signature = poolSignatureFrom(cfg);
 
-  if (!pool || poolSignature !== signature) {
-    if (pool) {
-      pool.end().catch(() => {});
+  if (!pgPool || pgPoolSignature !== signature) {
+    if (pgPool) {
+      pgPool.end().catch(() => {});
     }
-    pool = new Pool(cfg);
-    poolSignature = signature;
-    pool.on("error", () => {
-      pool?.end().catch(() => {});
-      pool = null;
-      poolSignature = null;
+    pgPool = new Pool(cfg);
+    pgPoolSignature = signature;
+    pgPool.on("error", () => {
+      pgPool?.end().catch(() => {});
+      pgPool = null;
+      pgPoolSignature = null;
     });
   }
 
-  return pool;
+  return pgPool as unknown as DevDbPool;
 }
 
 export function getDevDbMeta() {
-  const cfg = parseNpgsql(loadConnectionString());
+  if (isBridgeMode()) {
+    return {
+      host: "lambda-db-bridge",
+      database: "(remote)",
+      port: 443,
+      user: "bridge",
+    };
+  }
+  const cfg = resolvePoolConfig();
+  if (cfg.connectionString && isPostgresUri(cfg.connectionString)) {
+    return metaFromPostgresUri(cfg.connectionString);
+  }
   return { host: cfg.host, database: cfg.database, port: cfg.port, user: cfg.user };
 }
