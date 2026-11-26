@@ -8,7 +8,6 @@
     "start:next-only": "next start",
     "smart:agents": "node scripts/smart-agents.mjs",
     "build": "node scripts/clean-cache.mjs && next build",
-    "amplify:diagnose": "node scripts/diagnose-amplify-build-spec.mjs",
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest"
