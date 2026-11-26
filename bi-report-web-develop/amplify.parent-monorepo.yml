@@ -1,0 +1,23 @@
+# Use when Amplify's Git root is ABOVE bi-report-web-develop (app lives in bi-report-web-develop/apps/portal).
+# Copy to <parent-repo>/amplify.yml and commit, or paste into Amplify Console build settings.
+version: 1
+applications:
+  - appRoot: bi-report-web-develop/apps/portal
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - echo "amplify.yml spec lambda-db-bridge-v3 (parent monorepo)"
+            - npm ci
+        build:
+          commands:
+            - node scripts/amplify-write-env-production.mjs
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - "**/*"
+      cache:
+        paths:
+          - node_modules/**/*
+          - .next/cache/**/*
