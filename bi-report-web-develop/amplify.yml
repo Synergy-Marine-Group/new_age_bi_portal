@@ -8,6 +8,7 @@ applications:
         preBuild:
           commands:
             - echo "amplify.yml spec lambda-db-bridge-v3 (repo root apps/portal)"
+            - node scripts/diagnose-amplify-build-spec.mjs || true
             - npm ci
         build:
           commands:

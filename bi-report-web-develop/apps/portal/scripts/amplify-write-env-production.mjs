@@ -1,7 +1,12 @@
 /**
  * Writes apps/portal/.env.production from Amplify branch env (no grep — missing vars are OK).
  */
-import { writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const _scriptDir = dirname(fileURLToPath(import.meta.url));
+const _debugLog = resolve(_scriptDir, "..", "..", "..", ".cursor", "debug-a5396f.log");
 
 const EXACT_KEYS = [
   "MICROSOFT_TENANT_ID",
@@ -42,6 +47,42 @@ for (const [key, value] of Object.entries(process.env)) {
 }
 
 writeFileSync(".env.production", `${lines.join("\n")}\n`);
+const summary = {
+  lineCount: lines.length,
+  bridge: Boolean(process.env.LAMBDA_DB_BRIDGE_URL),
+  keysWritten: lines.map((l) => l.split("=")[0]),
+};
 console.log(
-  `amplify-write-env-production: wrote ${lines.length} var(s) (bridge=${Boolean(process.env.LAMBDA_DB_BRIDGE_URL)})`,
+  `amplify-write-env-production: wrote ${summary.lineCount} var(s) (bridge=${summary.bridge})`,
 );
+// #region agent log
+try {
+  appendFileSync(
+    _debugLog,
+    `${JSON.stringify({
+      sessionId: "a5396f",
+      runId: "amplify-env-writer",
+      hypothesisId: "H5",
+      location: "amplify-write-env-production.mjs",
+      message: "wrote .env.production",
+      data: summary,
+      timestamp: Date.now(),
+    })}\n`,
+  );
+} catch {
+  /* amplify build */
+}
+fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a5396f" },
+  body: JSON.stringify({
+    sessionId: "a5396f",
+    runId: "amplify-env-writer",
+    hypothesisId: "H5",
+    location: "amplify-write-env-production.mjs",
+    message: "wrote .env.production",
+    data: summary,
+    timestamp: Date.now(),
+  }),
+}).catch(() => {});
+// #endregion
