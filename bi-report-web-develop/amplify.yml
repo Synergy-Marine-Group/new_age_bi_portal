@@ -1,0 +1,27 @@
+version: 1
+applications:
+  - appRoot: apps/portal
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            - env | grep -e '^MICROSOFT_TENANT_ID=' >> .env.production || true
+            - env | grep -e '^MICROSOFT_CLIENT_ID=' >> .env.production || true
+            - env | grep -e '^MICROSOFT_CLIENT_SECRET=' >> .env.production || true
+            - env | grep -e '^MICROSOFT_REDIRECT_URI=' >> .env.production || true
+            - env | grep -e '^JWT_SECRET=' >> .env.production || true
+            - env | grep -e '^NEXT_PUBLIC_' >> .env.production || true
+            - env | grep -e '^LAMBDA_DB_BRIDGE_URL=' >> .env.production || true
+            - env | grep -e '^LAMBDA_DB_BRIDGE_SECRET=' >> .env.production || true
+            - env | grep -e '^SQL_CONNECTION_STRING=' >> .env.production || true
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
