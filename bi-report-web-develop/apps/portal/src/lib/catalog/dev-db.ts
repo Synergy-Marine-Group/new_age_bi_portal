@@ -1,4 +1,5 @@
 import { Pool, type PoolConfig } from "pg";
+import { isUsableSqlConnectionString } from "./catalog-db-diagnostics";
 import { createBridgePool, isBridgeMode } from "./db-bridge";
 import type { DevDbPool } from "./dev-db-types";
 
@@ -37,7 +38,10 @@ function isPostgresUri(value: string): boolean {
 function loadRawConnectionValue(): string {
   const fromAmplify = process.env.SQL_CONNECTION_STRING?.trim();
   if (fromAmplify) {
-    return normalizeConnectionInput(fromAmplify);
+    const normalized = normalizeConnectionInput(fromAmplify);
+    if (isUsableSqlConnectionString(normalized)) {
+      return normalized;
+    }
   }
 
   const fromConnection = process.env.BI_REPORT_DB_CONNECTION?.trim();

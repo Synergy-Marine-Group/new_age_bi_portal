@@ -85,6 +85,12 @@ describe("resolvePoolConfig", () => {
     expect(() => resolvePoolConfig()).toThrow(/SQL_CONNECTION_STRING/);
   });
 
+  it("ignores SQL_CONNECTION_STRING build placeholder unused", async () => {
+    process.env.SQL_CONNECTION_STRING = "unused";
+    const { resolvePoolConfig } = await import("./dev-db");
+    expect(() => resolvePoolConfig()).toThrow(/not configured/);
+  });
+
   it("strips wrapping quotes from SQL_CONNECTION_STRING", async () => {
     process.env.SQL_CONNECTION_STRING =
       '"postgres://quoted_user:secret@quote-host:5432/quoted_db"';

@@ -1,44 +1,27 @@
-# Paste this file at the Git repository root connected to Amplify Hosting (same as Console → Build settings).
 version: 1
-
 applications:
-  # ==========================================
-  # APPLICATION 1: BI PORTAL WEB
-  # ==========================================
-  - appRoot: bi-report-web-develop/apps/portal
+  - appRoot: apps/portal
     frontend:
       phases:
         preBuild:
           commands:
             - npm ci
-
         build:
           commands:
-            # Expose server-side environment variables to Next.js SSR
-            - env | grep -e '^MICROSOFT_TENANT_ID=' >> .env.production || true
-            - env | grep -e '^MICROSOFT_CLIENT_ID=' >> .env.production || true
-            - env | grep -e '^MICROSOFT_CLIENT_SECRET=' >> .env.production || true
-            - env | grep -e '^MICROSOFT_REDIRECT_URI=' >> .env.production || true
-            - env | grep -e '^JWT_SECRET=' >> .env.production || true
-
-            # Preserve public frontend environment variables
-            - env | grep -e '^NEXT_PUBLIC_' >> .env.production || true
-
-            # Lambda DB bridge (Amplify SSR → Lambda → RDS)
-            - env | grep -e '^LAMBDA_DB_BRIDGE_URL=' >> .env.production || true
-            - env | grep -e '^LAMBDA_DB_BRIDGE_SECRET=' >> .env.production || true
-
-            # Optional: direct Postgres on Amplify (omit env var when using bridge only)
-            - env | grep -e '^SQL_CONNECTION_STRING=' >> .env.production || true
-
-            # Build Next.js application
+            # Write server-side variables to .env.production for Next.js SSR.
+            # Only variables that are set are written; missing ones are skipped (no failure).
+            - |
+              for v in MICROSOFT_TENANT_ID MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET MICROSOFT_REDIRECT_URI JWT_SECRET LAMBDA_DB_BRIDGE_URL LAMBDA_DB_BRIDGE_SECRET; do
+                if [ -n "${!v}" ]; then printf '%s="%s"\n' "$v" "${!v}" >> .env.production; fi
+              done
+              true
+            - |
+              env | grep '^NEXT_PUBLIC_' >> .env.production || true
             - npm run build
-
       artifacts:
         baseDirectory: .next
         files:
           - '**/*'
-
       cache:
         paths:
           - node_modules/**/*

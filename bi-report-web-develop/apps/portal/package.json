@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/amplify-sync-env-production.mjs",
     "dev": "node scripts/dev.mjs",
     "start": "node scripts/start-with-agents.mjs",
     "start:next-only": "next start",
     "smart:agents": "node scripts/smart-agents.mjs",
     "build": "node scripts/clean-cache.mjs && next build",
+    "amplify:build": "bash scripts/amplify-build.sh",
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest"

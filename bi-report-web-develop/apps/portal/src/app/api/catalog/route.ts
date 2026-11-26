@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  agentLogCatalogDb,
+  getCatalogDbDiagnostics,
+} from "@/lib/catalog/catalog-db-diagnostics";
 import { emailFromBearer } from "@/lib/catalog/entra-user";
 import { loadCatalogForEmail } from "@/lib/catalog/reports-catalog";
 
@@ -18,19 +22,42 @@ export async function GET(request: NextRequest) {
     );
   } catch (error) {
     const err = error as Error & { code?: string };
-    console.error(`[catalog] load failed: ${err.code ?? err.name}: ${err.message}`);
-    const isTimeout =
+    const dbDiag = getCatalogDbDiagnostics();
+    agentLogCatalogDb(
+      { ...dbDiag, errCode: err.code, errName: err.name },
+      "H2",
+      "catalog load failed",
+    );
+    console.error(
+      `[catalog] load failed mode=${dbDiag.mode} ${err.code ?? err.name}: ${err.message}`,
+    );
+
+    const misconfigured =
+      dbDiag.mode === "unconfigured" ||
+      (dbDiag.sqlIsBuildPlaceholder && !dbDiag.hasLambdaUrl);
+    const isNetwork =
+      err.code === "ECONNREFUSED" ||
       err.code === "ETIMEDOUT" ||
       err.message?.toLowerCase().includes("timeout") ||
       err.message?.toLowerCase().includes("connect");
 
+    let message = "Could not load reports from the database.";
+    if (misconfigured) {
+      message =
+        "Catalog database is not configured on the server. Set LAMBDA_DB_BRIDGE_URL and LAMBDA_DB_BRIDGE_SECRET on Amplify (and remove SQL_CONNECTION_STRING=unused).";
+    } else if (isNetwork) {
+      message =
+        dbDiag.mode === "bridge"
+          ? "Could not reach the Lambda DB bridge. Check LAMBDA_DB_BRIDGE_URL and that the function is reachable."
+          : "Could not reach the BI database. Check VPN and network access.";
+    }
+
     return NextResponse.json(
       {
-        message: isTimeout
-          ? "Could not reach the BI database. Check VPN and network access."
-          : "Could not load reports from the database.",
+        message,
         detail: process.env.NODE_ENV === "development" ? err.message : undefined,
         code: err.code,
+        dbMode: dbDiag.mode,
       },
       { status: 500 },
     );
