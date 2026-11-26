@@ -40,7 +40,7 @@
     "jwt-decode": "^4.0.0",
     "lucide-react": "^1.44.0",
     "mammoth": "^1.12.2",
-    "next": "^14.2.35",
+    "next": "^15.5.29",
     "pg": "^8.23.0",
     "powerbi-client": "^2.24.1",
     "powerbi-client-react": "^2.0.2",
