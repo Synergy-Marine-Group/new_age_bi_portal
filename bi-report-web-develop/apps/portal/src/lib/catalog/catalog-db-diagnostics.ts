@@ -39,23 +39,3 @@ export function getCatalogDbDiagnostics() {
     })(),
   };
 }
-
-/** @param {Record<string, unknown>} data */
-export function agentLogCatalogDb(data: Record<string, unknown>, hypothesisId: string, message: string) {
-  const payload = {
-    sessionId: "a5396f",
-    runId: "catalog-db",
-    hypothesisId,
-    location: "catalog-db-diagnostics",
-    message,
-    data,
-    timestamp: Date.now(),
-  };
-  // #region agent log
-  fetch("http://127.0.0.1:7552/ingest/b0f4f508-7ce8-434e-b94d-0fd5fb6cd268", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a5396f" },
-    body: JSON.stringify(payload),
-  }).catch(() => {});
-  // #endregion
-}

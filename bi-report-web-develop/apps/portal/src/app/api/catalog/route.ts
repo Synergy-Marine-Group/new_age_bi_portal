@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  agentLogCatalogDb,
-  getCatalogDbDiagnostics,
-} from "@/lib/catalog/catalog-db-diagnostics";
+import { getCatalogDbDiagnostics } from "@/lib/catalog/catalog-db-diagnostics";
 import { emailFromBearer } from "@/lib/catalog/entra-user";
 import { loadCatalogForEmail } from "@/lib/catalog/reports-catalog";
 
@@ -23,11 +20,6 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const err = error as Error & { code?: string };
     const dbDiag = getCatalogDbDiagnostics();
-    agentLogCatalogDb(
-      { ...dbDiag, errCode: err.code, errName: err.name },
-      "H2",
-      "catalog load failed",
-    );
     console.error(
       `[catalog] load failed mode=${dbDiag.mode} ${err.code ?? err.name}: ${err.message}`,
     );
